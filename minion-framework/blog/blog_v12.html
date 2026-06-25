@@ -1,0 +1,1136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>I Built Claude's Dynamic Workflows by Accident, Two Weeks Before Anthropic Shipped Them</title>
+<style>
+  :root {
+    --ink: #1c1b18;
+    --paper: #f6f3ec;
+    --rule: #cfc8b8;
+    --muted: #6a6557;
+    --accent: #7a3b1f;
+    --code-bg: #ebe6d6;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 17px;
+    line-height: 1.55;
+  }
+  article {
+    max-width: 70ch;
+    margin: 4rem auto 3rem;
+    padding: 0 1.25rem;
+  }
+  h1 {
+    font-size: 2.1rem;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    margin: 0 0 0.4rem;
+  }
+  h2 {
+    font-size: 1.25rem;
+    margin: 2.4rem 0 0.6rem;
+    letter-spacing: -0.005em;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 0.25rem;
+  }
+  h3 {
+    font-size: 1.05rem;
+    margin: 1.6rem 0 0.4rem;
+    letter-spacing: -0.003em;
+  }
+  .section-meta {
+    margin: -0.2rem 0 1.1rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-variant: small-caps;
+    letter-spacing: 0.08em;
+  }
+  .post-meta {
+    margin: 0.3rem 0 2.4rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+    font-variant: small-caps;
+    letter-spacing: 0.08em;
+  }
+  .dek {
+    color: var(--muted);
+    font-style: italic;
+    margin: 0 0 2rem;
+    font-size: 1.02rem;
+  }
+  p { margin: 0.85rem 0; }
+  a { color: var(--accent); }
+  code, pre {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.92em;
+  }
+  code {
+    background: var(--code-bg);
+    padding: 0.06em 0.32em;
+    border-radius: 3px;
+  }
+  pre {
+    background: var(--code-bg);
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    border-radius: 4px;
+    line-height: 1.4;
+    font-size: 0.82rem;
+    border: 1px solid var(--rule);
+  }
+  .code-wrap {
+    position: relative;
+  }
+  .code-wrap pre {
+    padding-right: 4.5rem;
+  }
+  .copy-btn {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.55rem;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.7rem;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--muted);
+    border-radius: 3px;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    font-variant: small-caps;
+    opacity: 0.6;
+    transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .code-wrap:hover .copy-btn {
+    opacity: 1;
+  }
+  .copy-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .copy-btn.copied {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: rgba(122, 59, 31, 0.06);
+    padding: 0.8rem 1rem;
+    margin: 1.4rem 0;
+    font-size: 0.97rem;
+  }
+  .callout strong { color: var(--accent); }
+  .callout p { margin: 0.3rem 0; }
+  figure {
+    margin: 1.8rem 0;
+    padding: 0;
+  }
+  figure img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+  }
+  figure figcaption {
+    margin-top: 0.5rem;
+    font-style: italic;
+    font-size: 0.86rem;
+    color: var(--muted);
+    text-align: center;
+  }
+  .diagram {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin: 1.8rem auto;
+    background: transparent;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  .diagram .d-box { fill: var(--paper); stroke: var(--ink); stroke-width: 1; }
+  .diagram .d-box-emph { fill: rgba(122, 59, 31, 0.07); stroke: var(--accent); stroke-width: 1.5; }
+  .diagram .d-lane { fill: none; stroke: var(--rule); stroke-width: 1; stroke-dasharray: 5 4; }
+  .diagram .d-divider { stroke: var(--rule); stroke-width: 1; stroke-dasharray: 4 4; }
+  .diagram .d-title { font: 600 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill: var(--ink); letter-spacing: -0.005em; }
+  .diagram .d-label { font: 13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill: var(--ink); }
+  .diagram .d-label-bold { font: 600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill: var(--ink); }
+  .diagram .d-mono { font: 11px "SF Mono",Menlo,Consolas,monospace; fill: var(--muted); }
+  .diagram .d-anno { font: italic 11px -apple-system,sans-serif; fill: var(--muted); }
+  .diagram .d-arrow { fill: none; stroke: var(--ink); stroke-width: 1; }
+  .diagram .d-arrow-emph { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+  .diagram .d-dashed { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+  .diagram .d-badge { fill: var(--paper); stroke: var(--accent); stroke-width: 1; }
+  .diagram .d-badge-text { font: 600 11px "SF Mono",Menlo,monospace; fill: var(--accent); }
+  .dl-btn {
+    display: inline-block;
+    margin-top: 0.6rem;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.78rem;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    color: var(--accent);
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    font-variant: small-caps;
+  }
+  .dl-btn:hover {
+    background: rgba(122, 59, 31, 0.08);
+  }
+  .dl-btn:active {
+    background: rgba(122, 59, 31, 0.15);
+  }
+  .dl-btn.copied {
+    background: rgba(122, 59, 31, 0.15);
+  }
+  figure .dl-wrap {
+    text-align: center;
+  }
+  .table-actions {
+    text-align: right;
+    margin-top: -0.4rem;
+    margin-bottom: 1.6rem;
+  }
+  .image-slot {
+    border: 2px dashed #4a7a6f;
+    background: rgba(74, 122, 111, 0.06);
+    padding: 1rem 1.2rem;
+    margin: 1.8rem 0;
+    border-radius: 4px;
+    font-size: 0.93rem;
+    color: #2c4a44;
+  }
+  .image-slot .label {
+    font-variant: small-caps;
+    letter-spacing: 0.08em;
+    font-size: 0.78rem;
+    color: #4a7a6f;
+    margin-bottom: 0.4rem;
+    display: block;
+  }
+  .image-slot .title {
+    font-weight: 600;
+    margin-bottom: 0.6rem;
+    font-size: 1rem;
+  }
+  .image-slot .prompt {
+    background: rgba(255, 255, 255, 0.5);
+    border-left: 2px solid #4a7a6f;
+    padding: 0.5rem 0.75rem;
+    margin: 0.5rem 0 0;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: #2c4a44;
+    white-space: pre-wrap;
+  }
+  .image-slot .caption {
+    font-style: italic;
+    font-size: 0.85rem;
+    color: #4a6560;
+    margin-top: 0.5rem;
+  }
+  .footnote {
+    font-size: 0.86rem;
+    color: var(--muted);
+    border-left: 2px solid var(--rule);
+    padding: 0.4rem 0.8rem;
+    margin: 1rem 0;
+  }
+  .draft-edit {
+    color: #b91c1c;
+  }
+  .draft-edit a {
+    color: inherit;
+  }
+  .draft-edit code {
+    color: #b91c1c;
+    background: rgba(185, 28, 28, 0.06);
+  }
+  .draft-edit strong {
+    color: inherit;
+  }
+  .draft-edit .section-meta {
+    color: #d97a6a;
+  }
+  .draft-edit h2 {
+    color: #b91c1c;
+    border-bottom-color: rgba(185, 28, 28, 0.3);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.2rem 0;
+    font-size: 0.93rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  th {
+    border-bottom: 2px solid var(--ink);
+    font-weight: 600;
+  }
+  footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule);
+    color: var(--muted);
+    font-size: 0.86rem;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .tag {
+    font-variant: small-caps;
+    letter-spacing: 0.04em;
+  }
+  ul { padding-left: 1.2rem; }
+  li { margin: 0.25rem 0; }
+
+  /* Draft annotation: title options aside */
+  .title-options {
+    background: #fff6c2;
+    border: 2px dashed #b8941f;
+    padding: 1rem 1.2rem 0.9rem;
+    margin: 0 0 2.5rem;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    color: #4a3f10;
+  }
+  .title-options h3 {
+    margin: 0 0 0.6rem;
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6b5610;
+  }
+  .title-options ol {
+    margin: 0.4rem 0 0.6rem;
+    padding-left: 1.4rem;
+  }
+  .title-options ol li {
+    margin: 0.35rem 0;
+  }
+  .title-options .group-label {
+    font-variant: small-caps;
+    letter-spacing: 0.05em;
+    color: #8a6f12;
+    font-size: 0.82rem;
+    margin-top: 0.7rem;
+    display: block;
+  }
+  .title-options .draft-note {
+    margin-top: 0.8rem;
+    font-style: italic;
+    font-size: 0.82rem;
+    color: #7a6510;
+    border-top: 1px dashed #b8941f;
+    padding-top: 0.5rem;
+  }
+</style>
+</head>
+<body>
+<article>
+  <aside class="title-options">
+    <h3>Title candidates (pick one)</h3>
+
+    <span class="group-label">straight</span>
+    <ol>
+      <li>I Built Claude's Dynamic Workflows by Accident, Two Weeks Before Anthropic Shipped Them</li>
+      <li>The Minion Framework: What I Built Before Anthropic Shipped Dynamic Workflows</li>
+    </ol>
+
+    <span class="group-label">punchy</span>
+    <ol start="3">
+      <li>A SQLite Queue Is a Dynamic Workflow</li>
+      <li>Same Idea, Two Weeks Earlier</li>
+    </ol>
+
+    <span class="group-label">HN bait</span>
+    <ol start="5">
+      <li>I Spent Three Weeks Reinventing a Feature Anthropic Was About to Ship. I'd Do It Again.</li>
+      <li>How a SQLite Table Became My Fine-Tuning Pipeline</li>
+    </ol>
+
+    <p class="draft-note">delete this block before publishing</p>
+  </aside>
+
+  <header>
+    <h1>I Built Claude's Dynamic Workflows by Accident, Two Weeks Before Anthropic Shipped Them</h1>
+    <p class="dek">Notes on a SQLite-backed agent fan-out pattern for building a vertical fine-tuning corpus, which turned out to be the same architecture Anthropic productionized as Dynamic Workflows, and what each one still does better.</p>
+  </header>
+
+  <p class="post-meta">2,950 words &middot; ~13 min read</p>
+
+  <p>In May I needed a structured corpus to feed two parallel downstream things: a classifier fine-tune that maps a raw forum thread to a schema of persona, intent, and situation tags; and an SFT/DPO dataset for a domain-specialized chat model, where the same labels act as quality gates over the underlying thread text. Roughly 25,000 thread-level records against a locked schema, drawn from a public Q&amp;A forum where credentialed experts answer real questions from real users. Standard 2026 vertical-LLM playbook. The unstandard part was the budget: the obvious API estimate was about <span class="draft-edit">$1,200</span> of Opus tokens, and the actual budget was $200 — my Claude Code subscription, the one I was already paying for.</p>
+
+  <figure>
+    <svg id="diag-thread-to-record" class="diagram" viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A forum thread on the left is converted by an Opus labeling pass into a structured JSON record on the right.">
+      <defs>
+        <marker id="ah0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#7a3b1f" />
+        </marker>
+      </defs>
+
+      <!-- LEFT: Forum thread -->
+      <text class="d-title" x="150" y="22" text-anchor="middle">forum thread</text>
+
+      <rect class="d-box" x="20" y="40" width="260" height="290" rx="4" />
+
+      <!-- Header fill (rounded top corners to match outer box, no stroke — outer .d-box handles borders) -->
+      <path d="M 20 44 A 4 4 0 0 1 24 40 L 276 40 A 4 4 0 0 1 280 44 L 280 62 L 20 62 Z" fill="rgba(122, 59, 31, 0.06)" />
+      <line x1="20" y1="62" x2="280" y2="62" stroke="#1c1b18" stroke-width="1" />
+      <text class="d-mono" x="30" y="55">r/tax · u/throwaway42 · 3y ago</text>
+
+      <!-- Post title -->
+      <text class="d-label-bold" x="30" y="82">Got a CP2000 from the IRS,</text>
+      <text class="d-label-bold" x="30" y="100">what do I do?</text>
+
+      <!-- Post body lines -->
+      <rect x="30" y="112" width="240" height="5" fill="#d6cfb8" />
+      <rect x="30" y="123" width="225" height="5" fill="#d6cfb8" />
+      <rect x="30" y="134" width="235" height="5" fill="#d6cfb8" />
+      <rect x="30" y="145" width="180" height="5" fill="#d6cfb8" />
+
+      <!-- Divider -->
+      <line x1="30" y1="165" x2="270" y2="165" stroke="#cfc8b8" stroke-width="1" stroke-dasharray="3 3" />
+
+      <!-- Comment 1 -->
+      <text class="d-mono" x="40" y="185">↳ u/tax_pro_jenny · CPA</text>
+      <rect x="40" y="193" width="220" height="5" fill="#d6cfb8" />
+      <rect x="40" y="204" width="195" height="5" fill="#d6cfb8" />
+
+      <!-- Comment 2 -->
+      <text class="d-mono" x="40" y="230">↳ u/throwaway42 (OP)</text>
+      <rect x="40" y="238" width="210" height="5" fill="#d6cfb8" />
+      <rect x="40" y="249" width="165" height="5" fill="#d6cfb8" />
+
+      <!-- Comment 3 -->
+      <text class="d-mono" x="40" y="275">↳ u/tax_pro_jenny · CPA</text>
+      <rect x="40" y="283" width="225" height="5" fill="#d6cfb8" />
+      <rect x="40" y="294" width="205" height="5" fill="#d6cfb8" />
+      <rect x="40" y="305" width="160" height="5" fill="#d6cfb8" />
+
+      <!-- ARROW with annotation -->
+      <path class="d-arrow-emph" d="M 290 180 L 410 180" marker-end="url(#ah0)" />
+      <text class="d-anno" x="350" y="167" text-anchor="middle">labeled by Opus 4.7</text>
+      <text class="d-anno" x="350" y="200" text-anchor="middle">against the locked schema</text>
+
+      <!-- RIGHT: JSON record -->
+      <text class="d-title" x="570" y="22" text-anchor="middle">structured JSON record</text>
+
+      <rect class="d-box-emph" x="420" y="40" width="280" height="290" rx="4" />
+
+      <text class="d-mono" x="432" y="62">{</text>
+      <text class="d-mono" x="444" y="80">"persona": ["w2_employee"],</text>
+      <text class="d-mono" x="444" y="98">"situation": ["irs_trouble"],</text>
+      <text class="d-mono" x="444" y="116">"intent": "decode_notice",</text>
+      <text class="d-mono" x="444" y="134">"urgency": "high",</text>
+      <text class="d-mono" x="444" y="152">"emotion": "panic",</text>
+      <text class="d-mono" x="444" y="170">"money_at_stake": "1k-10k",</text>
+      <text class="d-mono" x="444" y="188">"answered_by": "credentialed",</text>
+      <text class="d-mono" x="444" y="206">"answer": "Respond by...",</text>
+      <text class="d-mono" x="444" y="224">"answer_quality": "high",</text>
+      <text class="d-mono" x="444" y="242">"tool_solvability": "ai_serviceable",</text>
+      <text class="d-mono" x="444" y="260">"confidence": 0.85</text>
+      <text class="d-mono" x="432" y="278">}</text>
+
+      <text class="d-anno" x="560" y="298" text-anchor="middle">13 persona tags · 8 situation tags</text>
+      <text class="d-anno" x="560" y="315" text-anchor="middle">~18 other nested fields</text>
+    </svg>
+    <figcaption>One thread in. One validated record out. Twenty-five thousand times.</figcaption>
+    <div class="dl-wrap">
+      <button type="button" class="dl-btn" onclick="downloadDiagram('diag-thread-to-record', 'thread-to-record.png')">Download PNG</button>
+    </div>
+  </figure>
+
+  <p>So I wrote some queue plumbing, opened sixteen terminal windows, and let Claude Code chew through threads at me until my plan budget caught fire.</p>
+
+  <p>Two weeks later Anthropic shipped <a href="https://code.claude.com/docs/en/workflows">Dynamic Workflows</a>: <em>"a JavaScript script that orchestrates subagents at scale. Claude writes the script for the task you describe, and a runtime executes it in the background while your session stays responsive."</em> Sixteen concurrent subagents per run, up to a thousand per run, resumable, observable, with a clean <code>/workflows</code> view.</p>
+
+  <p>It is the same pattern. Different surface, same load-bearing idea: <strong>if you're spawning a lot of agents, the orchestrator should not be sitting in a Claude context window.</strong> This is a note on the version I built — call it the Minion Framework — what it still does better than Dynamic Workflows, what Dynamic Workflows does better than mine, and what running this kind of thing actually looks like when you're nursing it through a flat-rate subscription bucket.</p>
+
+  <figure>
+    <img src="../images/image1_hero_classroom.jpeg" alt="A Monet-style painting of Gru on the left holding a clipboard, addressing rows of Minions sitting at small wooden desks in a sunlit green meadow, like students facing a teacher." />
+    <figcaption>Gru addresses the Minion Armies. The queue is the only thing that knows where everyone is.</figcaption>
+  </figure>
+
+  <h2>The job, in slightly more detail</h2>
+
+  <p class="section-meta">196 words &middot; 1 min read</p>
+
+  <p class="draft-edit">For a vertical fine-tune, sampling isn't enough. The personas that matter most — edge cases, underserved segments — show up in single-digit percentages of any forum corpus. Sample at five percent and the edges round off to the mean, which is exactly the failure mode the generic model already has.</p>
+
+  <p>The output of the labeling pass is one structured JSON record per thread: thirteen persona tags, eight situation tags, ~18 other nested fields. From this single corpus you can spin up several distinct training datasets — the labels feed a <a href="https://arxiv.org/abs/2406.17633">classifier fine-tune</a> directly, and act as quality filters that extract clean <code>(question, expert-answer)</code> pairs from the underlying forum text for an SFT corpus or a DPO preference set.</p>
+
+  <figure>
+    <svg id="diag-data-fork" class="diagram" viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One labeled record fanning out to three training datasets">
+      <defs>
+        <marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#1c1b18" />
+        </marker>
+        <marker id="ah1e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#7a3b1f" />
+        </marker>
+      </defs>
+
+      <rect class="d-box" x="20" y="150" width="100" height="42" rx="4" />
+      <text class="d-label" x="70" y="176" text-anchor="middle">thread</text>
+
+      <path class="d-arrow" d="M 122 171 L 178 171" marker-end="url(#ah1)" />
+
+      <rect class="d-box-emph" x="180" y="120" width="220" height="100" rx="4" />
+      <text class="d-label-bold" x="290" y="148" text-anchor="middle">labeled JSON record</text>
+      <text class="d-mono" x="290" y="172" text-anchor="middle">persona, intent, situation,</text>
+      <text class="d-mono" x="290" y="188" text-anchor="middle">answer_quality, answered_by,</text>
+      <text class="d-mono" x="290" y="204" text-anchor="middle">money_at_stake, ...</text>
+
+      <path class="d-arrow-emph" d="M 402 170 C 450 170, 450 80, 498 80" marker-end="url(#ah1e)" />
+      <path class="d-arrow-emph" d="M 402 170 L 498 170" marker-end="url(#ah1e)" />
+      <path class="d-arrow-emph" d="M 402 170 C 450 170, 450 260, 498 260" marker-end="url(#ah1e)" />
+
+      <text class="d-anno" x="430" y="110" text-anchor="middle">training data</text>
+      <text class="d-anno" x="430" y="160" text-anchor="middle">quality filter</text>
+      <text class="d-anno" x="430" y="250" text-anchor="middle">quality filter</text>
+
+      <rect class="d-box" x="500" y="50" width="200" height="60" rx="4" />
+      <text class="d-label-bold" x="600" y="76" text-anchor="middle">Classifier fine-tune</text>
+      <text class="d-mono" x="600" y="96" text-anchor="middle">thread → tags</text>
+
+      <rect class="d-box" x="500" y="140" width="200" height="60" rx="4" />
+      <text class="d-label-bold" x="600" y="166" text-anchor="middle">SFT corpus</text>
+      <text class="d-mono" x="600" y="186" text-anchor="middle">(question, expert answer)</text>
+
+      <rect class="d-box" x="500" y="230" width="200" height="60" rx="4" />
+      <text class="d-label-bold" x="600" y="256" text-anchor="middle">DPO preference pairs</text>
+      <text class="d-mono" x="600" y="276" text-anchor="middle">(low-quality vs high)</text>
+    </svg>
+    <figcaption>The labels are training data in branch 1, and a filter over the underlying thread text in branches 2 and 3.</figcaption>
+    <div class="dl-wrap">
+      <button type="button" class="dl-btn" onclick="downloadDiagram('diag-data-fork', 'training-datasets.png')">Download PNG</button>
+    </div>
+  </figure>
+
+  <p class="draft-edit">Per-thread workload on Opus 4.7 (at $5/M input + $25/M output) runs ~$0.05 per record (measured, ~5.5K input + ~500 output). 25,000 of those is ~$1,200 — not a huge spend, but not a number you need to spend either, if you have a Claude Max 20x subscription sitting idle most of every five-hour window.</p>
+
+  <h2>What I tried first</h2>
+
+  <p class="section-meta">377 words &middot; 2 min read</p>
+
+  <p>I started simple: I asked Claude, in a single session, to write a CLI that read each thread, produced the JSON record, and marked the row done. It worked for a few records, then started hallucinating — skipping the read step, inventing JSON, moving on. Occasionally it would confess in the next turn that it had made the data up. Doing the work and marking it done in the same loop is a recipe for fiction.</p>
+
+  <p>So I split the responsibilities. The parent dispatched one sub-agent per thread, waited for a valid JSON file on disk, then marked the row done. Sub-agents actually read the thread — their notion of "done" was a valid file, not a clean queue row. Correctness solved. But it was serial: ~30 seconds per record, eight days for 25K.</p>
+
+  <p>So I dispatched ten sub-agents per turn. Faster, but the harness throttles bit — ask for ten concurrent and you get two or three in flight. The parent's context fills with every sub-agent's return. By fifteen hundred records in, the parent had lost track of what was in flight. One session is the wrong unit.</p>
+
+  <p>So I opened a second terminal. Both sessions now needed somewhere to share which IDs were claimed and which were free, and that's where the SQLite work queue was born — one table with a status column, the simplest cross-process store I could think of. The sessions promptly claimed the same twenty IDs anyway: my claim was <code>SELECT</code> then <code>UPDATE</code>, a textbook data race. The fix is to fold it into a single <code>UPDATE ... WHERE status='queued'</code>, atomic by definition. <strong>Once the claim is atomic, the queue is doing the orchestration.</strong> Claude does the labeling. The queue decides what runs next. There is no parent Claude holding the plan.</p>
+
+  <p>That's the move Dynamic Workflows formalized, two weeks later. Anthropic put the plan in a JS script outside the model's context; I put it in a SQLite table outside the model's context. The rest writes itself: file races become per-session scratch dirs; tracking sixteen terminals becomes a polling overseer; jobs that outlive a session become durable claims that survive Ctrl-C. The clever bit was realizing the orchestrator didn't need to be a Claude in the first place.</p>
+
+  <h2>The Minion Framework</h2>
+
+  <p class="section-meta">515 words &middot; 2 min read</p>
+
+  <p>The shape that came out the other side:</p>
+
+  <figure>
+    <svg id="diag-architecture" class="diagram" viewBox="0 0 720 440" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Minion Framework architecture: a SQLite work queue feeds three Minion Army sessions, each fanning out to ten minions per dispatch, writing into per-Army scratch dirs that merge into a unified corpus.">
+      <defs>
+        <marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#1c1b18" />
+        </marker>
+        <marker id="ah3e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#7a3b1f" />
+        </marker>
+      </defs>
+
+      <!-- Queue at top -->
+      <rect class="d-box-emph" x="170" y="20" width="380" height="60" rx="4" />
+      <text class="d-label-bold" x="360" y="46" text-anchor="middle">SQLite work_queue</text>
+      <text class="d-mono" x="360" y="67" text-anchor="middle">WAL mode · atomic claim via WHERE status='queued'</text>
+
+      <!-- Arrows from queue down to each Army -->
+      <path class="d-arrow-emph" d="M 230 82 L 130 138" marker-end="url(#ah3e)" />
+      <path class="d-arrow-emph" d="M 360 82 L 360 138" marker-end="url(#ah3e)" />
+      <path class="d-arrow-emph" d="M 490 82 L 590 138" marker-end="url(#ah3e)" />
+
+      <!-- Three Army boxes (clean, no minion ellipses) -->
+      <!-- Lane 1 -->
+      <rect class="d-box" x="40" y="140" width="180" height="180" rx="4" />
+      <text class="d-label-bold" x="130" y="166" text-anchor="middle">Minion Army 1</text>
+      <text class="d-mono" x="130" y="184" text-anchor="middle">Claude Code session</text>
+      <line x1="60" y1="200" x2="200" y2="200" stroke="#cfc8b8" stroke-width="1" />
+      <text class="d-label" x="130" y="226" text-anchor="middle">claim 10 thread IDs</text>
+      <rect class="d-badge" x="45" y="240" width="170" height="30" rx="15" />
+      <text class="d-badge-text" x="130" y="260" text-anchor="middle">× 10 minions / dispatch</text>
+      <text class="d-mono" x="130" y="298" text-anchor="middle">work/W1/  scratch dir</text>
+
+      <!-- Lane 2 -->
+      <rect class="d-box" x="270" y="140" width="180" height="180" rx="4" />
+      <text class="d-label-bold" x="360" y="166" text-anchor="middle">Minion Army 2</text>
+      <text class="d-mono" x="360" y="184" text-anchor="middle">Claude Code session</text>
+      <line x1="290" y1="200" x2="430" y2="200" stroke="#cfc8b8" stroke-width="1" />
+      <text class="d-label" x="360" y="226" text-anchor="middle">claim 10 thread IDs</text>
+      <rect class="d-badge" x="275" y="240" width="170" height="30" rx="15" />
+      <text class="d-badge-text" x="360" y="260" text-anchor="middle">× 10 minions / dispatch</text>
+      <text class="d-mono" x="360" y="298" text-anchor="middle">work/W2/  scratch dir</text>
+
+      <!-- Lane N -->
+      <rect class="d-box" x="500" y="140" width="180" height="180" rx="4" />
+      <text class="d-label-bold" x="590" y="166" text-anchor="middle">Minion Army N</text>
+      <text class="d-mono" x="590" y="184" text-anchor="middle">Claude Code session</text>
+      <line x1="520" y1="200" x2="660" y2="200" stroke="#cfc8b8" stroke-width="1" />
+      <text class="d-label" x="590" y="226" text-anchor="middle">claim 10 thread IDs</text>
+      <rect class="d-badge" x="505" y="240" width="170" height="30" rx="15" />
+      <text class="d-badge-text" x="590" y="260" text-anchor="middle">× 10 minions / dispatch</text>
+      <text class="d-mono" x="590" y="298" text-anchor="middle">work/WN/  scratch dir</text>
+
+      <!-- Arrows from each Army to unified corpus -->
+      <path class="d-arrow" d="M 130 322 C 130 360, 240 365, 270 388" marker-end="url(#ah3)" />
+      <path class="d-arrow" d="M 360 322 L 360 388" marker-end="url(#ah3)" />
+      <path class="d-arrow" d="M 590 322 C 590 360, 480 365, 450 388" marker-end="url(#ah3)" />
+
+      <!-- Unified output -->
+      <rect class="d-box-emph" x="240" y="388" width="240" height="44" rx="4" />
+      <text class="d-label-bold" x="360" y="416" text-anchor="middle">unified training corpus</text>
+    </svg>
+    <figcaption>The queue is the only shared state. Armies don't talk to each other; they race for rows.</figcaption>
+    <div class="dl-wrap">
+      <button type="button" class="dl-btn" onclick="downloadDiagram('diag-architecture', 'minion-framework-architecture.png')">Download PNG</button>
+    </div>
+  </figure>
+
+  <p>The vocabulary first, because it matters later in the post:</p>
+
+  <ul>
+    <li>A <strong>Minion Army</strong> is one Claude Code session running in its own terminal. Each Army claims work from the queue and fans it out. I ran up to sixteen Armies at peak.</li>
+    <li>A <strong>minion</strong> is a single ephemeral sub-agent the Army spawns via Claude Code's Agent tool. Each minion handles exactly one thread, writes a JSON record to disk, and exits. Each Army spawns ten minions per dispatch.</li>
+    <li>The whole arrangement — Armies plus minions plus the queue plus Gru (more on that below) — is the <strong>Minion Framework</strong>. (A "framework" in the loosest possible sense of the word: a SQLite table, a CLI, and two prompt files held together by intent.)</li>
+  </ul>
+
+  <p>Three primitives make it run:</p>
+
+  <ol>
+    <li><strong>A shared SQLite work queue.</strong> Every thread that needs a record gets a row with status <code>queued</code>. The DB is in WAL mode with a 30-second busy timeout so many writers don't trip over each other.</li>
+    <li><strong>N parallel Minion Armies.</strong> Each is a separate terminal running <code>claude</code> with a single worker prompt pinned to its context. The prompt tells it: claim ten thread IDs, spawn ten minions, store the JSON, mark done. To keep an Army working until its job is finished I use Claude Code's built-in <code>/goal</code> skill — the Army gets a target ("process all queued threads," or "process 500 threads from this subreddit") and keeps re-firing the worker prompt until the goal is met, then stops on its own. No babysitting per-batch; Gru handles the global view.</li>
+    <li><strong>Per-Army minion fan-out.</strong> The worker loop is: claim a batch of ten thread IDs, serialize them to disk, dispatch ten minions in <em>one</em> assistant message via the Agent tool, wait for the JSON files to land, validate against the schema, mark done. Loop.</li>
+  </ol>
+
+  <p>The claim is atomic via a conditional UPDATE:</p>
+
+  <div class="code-wrap">
+    <button type="button" class="copy-btn" onclick="copyCode(this)">Copy</button>
+    <pre>
+UPDATE work_queue
+SET    status     = 'claimed',
+       claimed_by = :wid,
+       claimed_at = :now
+WHERE  thread_id  = :tid
+AND    status     = 'queued';
+    </pre>
+  </div>
+
+  <p>The <code>WHERE status = 'queued'</code> clause is what makes this safe. Sixteen Armies trying to claim the same row will all run the UPDATE, but only one will match, and only that one gets the row back when it reads. No locking, no Redis, no Celery — just a table.</p>
+
+  <p>Each Army writes only to its own scratch directory at <code>pilot/agents/work/&lt;WID&gt;/</code>, which kills the obvious "two Armies <code>rm</code> each other's in-flight files" race without any coordination. Minions read their schema and rules from <code>SUB_AGENT_INSTRUCTIONS.md</code> by file path at dispatch time, so the worker prompt stays small even though the schema is large. (This was the single biggest token win — externalizing the rules file cut output tokens per dispatch by ~73%.)</p>
+
+  <p>The orchestrator — the thing that decides what runs next — is the queue. There is no orchestrating Claude. There is no script. The Armies don't talk to each other. They just race for rows.</p>
+
+  <h2>Gru</h2>
+
+  <p class="section-meta">473 words &middot; 2 min read</p>
+
+  <p>Sixteen Armies running in parallel is too many to track visually. By the time you've alt-tabbed through eight terminal windows the first one is already on its next batch and you've forgotten what its throughput was. So there is a seventeenth Claude Code session — let's call it <strong>Gru</strong>, because the Armies need a boss, and because the metaphor is right there — whose only job is to watch the fleet and tell me what's happening.</p>
+
+  <figure>
+    <img src="../images/image4_gru_console.jpeg" alt="A Monet-style interior painting of Gru sitting at a wooden desk holding a mug, watching a monitor that shows a soft tabular dashboard. Through a window to his left, distant Minions can be seen at work in a sunlit meadow." />
+    <figcaption>Gru doesn't orchestrate. Gru watches, and tells me when the 5-hour bucket is about to bite.</figcaption>
+  </figure>
+
+  <p>Gru runs on Claude Code's <code>/loop</code> skill too, but pointed at a different prompt: every five minutes, call three local Python scripts, read the rate-limit endpoint, and print a tabular summary into Gru's chat. Roughly what lands every tick:</p>
+
+  <div class="code-wrap">
+    <button type="button" class="copy-btn" onclick="copyCode(this)">Copy</button>
+    <pre>
+─── Gru heartbeat · 14:22:05 ──────────────────────────────────
+
+QUEUE
+  queued      1,847
+  claimed        48   (4 Armies × 10 + 8 stragglers)
+  done       23,108
+  failed         42
+
+PER-ARMY  (last 5 min)
+  WID                    batches   ok   fail   sec/batch   thr/min
+  ───────────────────────────────────────────────────────────────
+  claude-nedwize-83242        3   29      1          92       9.4
+  claude-nedwize-26662        3   30      0          88       9.8
+  claude-nedwize-21287        3   27      3         101       8.0
+  claude-nedwize-55700        2   20      0          96       6.3
+
+CONTEXT  (% of 200K Opus window)
+  claude-nedwize-83242   62%
+  claude-nedwize-26662   71%
+  claude-nedwize-21287   58%
+  claude-nedwize-55700   84%   ← restart soon
+
+MAX PLAN
+  5-hour rolling      74%   38 min left
+  7-day all-models    31%
+  7-day Sonnet-only   44%
+    </pre>
+  </div>
+
+  <p>The Max-plan block is the one that ended up mattering most, and it's the least documented part of the whole pipeline. Anthropic exposes a JSON endpoint at <code>api.anthropic.com/api/oauth/usage</code> that reports your current 5-hour rolling bucket and your 7-day windows. You authenticate with the same OAuth token Claude Code already stores in the macOS keychain. Reading it out and dropping it into Gru's heartbeat means Gru can tell me, at a glance: "you're at 74% of your 5-hour bucket with 38 minutes left in the window, slow down or you'll start hitting 429s in fifteen minutes."</p>
+
+  <p>The other three sources tell a different story. Queue status is the throughput truth — done divided by elapsed time, full stop. Per-Army logs are where you spot the slow Army that's silently been failing JSON-parse on every record for the last ten minutes. Context usage is where you spot the Army that's about to hit its 200K window and needs to be restarted with a fresh session before its next claim. None of these are visible from inside any individual Army — they don't know about each other, and they don't need to. Gru is the only thing in the system with a global view, and that global view is built entirely out of polling, not pushing.</p>
+
+  <p>It's worth saying out loud: Gru is the closest thing the Minion Framework has to a real orchestrator. But Gru doesn't <em>orchestrate</em>. Gru observes, summarizes, and lets me intervene. The actual scheduling decisions still belong to the queue.</p>
+
+  <h2>What Anthropic shipped</h2>
+
+  <p class="section-meta">191 words &middot; 1 min read</p>
+
+  <p>Dynamic Workflows do exactly the move I described above, but as a polished product. The orchestrator is a JavaScript script that Claude writes for you, executed in a runtime that lives outside your conversation.</p>
+
+  <p>From the docs:</p>
+
+  <div class="callout">
+    <p><em>"A workflow script holds the loop, the branching, and the intermediate results itself, so Claude's context holds only the final answer. Moving the plan into code also lets a workflow apply a repeatable quality pattern, not just run more agents: it can have independent agents adversarially review each other's findings before they're reported."</em></p>
+  </div>
+
+  <p>Up to <strong>16 concurrent subagents</strong>, up to <strong>1,000 total per run</strong>, observable in a <code>/workflows</code> progress view. The script coordinates; the agents do the reading, writing, and shelling.</p>
+
+  <p>Read that paragraph twice. It is, structurally, the Minion Framework with a different orchestrator substrate. Theirs is a JS script + a managed runtime + a built-in progress view. Mine is a SQLite table + N independent terminals + Gru watching from above. Both move the plan out of the context window; both treat the agent as ephemeral.</p>
+
+  <figure>
+    <svg id="diag-comparison" class="diagram" viewBox="0 0 720 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Side-by-side comparison: Dynamic Workflows runs subagents inside one session; the Minion Framework runs N separate Army sessions coordinated by a SQLite queue.">
+      <defs>
+        <marker id="ah5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#1c1b18" />
+        </marker>
+        <marker id="ah5e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#7a3b1f" />
+        </marker>
+      </defs>
+
+      <!-- Center divider -->
+      <line x1="360" y1="20" x2="360" y2="360" class="d-divider" />
+
+      <!-- ====== LEFT PANEL: Dynamic Workflows ====== -->
+      <text class="d-title" x="170" y="35" text-anchor="middle">Dynamic Workflows</text>
+
+      <!-- Single session boundary -->
+      <rect class="d-box-emph" x="30" y="55" width="280" height="280" rx="6" />
+      <text class="d-mono" x="170" y="76" text-anchor="middle">single Claude Code session</text>
+
+      <!-- JS orchestrator -->
+      <rect class="d-box" x="50" y="95" width="240" height="50" rx="4" />
+      <text class="d-label-bold" x="170" y="119" text-anchor="middle">JS orchestrator</text>
+      <text class="d-mono" x="170" y="136" text-anchor="middle">written by Claude, run in-process</text>
+
+      <!-- Arrow to subagent badge -->
+      <path class="d-arrow-emph" d="M 170 145 L 170 195" marker-end="url(#ah5e)" />
+
+      <!-- Subagent badge -->
+      <rect class="d-badge" x="60" y="195" width="220" height="42" rx="21" />
+      <text class="d-badge-text" x="170" y="221" text-anchor="middle">subagents (parallel fan-out)</text>
+
+      <!-- Constraints -->
+      <text class="d-anno" x="170" y="270" text-anchor="middle">16 concurrent · 1,000 total per run</text>
+      <text class="d-anno" x="170" y="290" text-anchor="middle">resumable within session only</text>
+      <text class="d-anno" x="170" y="310" text-anchor="middle">single machine</text>
+
+      <!-- ====== RIGHT PANEL: Minion Framework ====== -->
+      <text class="d-title" x="540" y="35" text-anchor="middle">Minion Framework</text>
+
+      <!-- SQLite queue -->
+      <rect class="d-box-emph" x="420" y="55" width="240" height="50" rx="4" />
+      <text class="d-label-bold" x="540" y="80" text-anchor="middle">SQLite work_queue</text>
+      <text class="d-mono" x="540" y="97" text-anchor="middle">durable · shared across processes</text>
+
+      <!-- Three SEPARATE Army boxes (distinct processes) -->
+      <rect class="d-box" x="395" y="140" width="90" height="100" rx="4" />
+      <text class="d-label-bold" x="440" y="162" text-anchor="middle">Army 1</text>
+      <text class="d-mono" x="440" y="178" text-anchor="middle">session</text>
+      <rect class="d-badge" x="402" y="195" width="76" height="26" rx="13" />
+      <text class="d-badge-text" x="440" y="213" text-anchor="middle">× 10</text>
+
+      <rect class="d-box" x="495" y="140" width="90" height="100" rx="4" />
+      <text class="d-label-bold" x="540" y="162" text-anchor="middle">Army 2</text>
+      <text class="d-mono" x="540" y="178" text-anchor="middle">session</text>
+      <rect class="d-badge" x="502" y="195" width="76" height="26" rx="13" />
+      <text class="d-badge-text" x="540" y="213" text-anchor="middle">× 10</text>
+
+      <rect class="d-box" x="595" y="140" width="90" height="100" rx="4" />
+      <text class="d-label-bold" x="640" y="162" text-anchor="middle">Army N</text>
+      <text class="d-mono" x="640" y="178" text-anchor="middle">session</text>
+      <rect class="d-badge" x="602" y="195" width="76" height="26" rx="13" />
+      <text class="d-badge-text" x="640" y="213" text-anchor="middle">× 10</text>
+
+      <!-- arrows from queue to Armies -->
+      <path class="d-arrow-emph" d="M 460 107 L 440 138" marker-end="url(#ah5e)" />
+      <path class="d-arrow-emph" d="M 540 107 L 540 138" marker-end="url(#ah5e)" />
+      <path class="d-arrow-emph" d="M 620 107 L 640 138" marker-end="url(#ah5e)" />
+
+      <text class="d-anno" x="540" y="270" text-anchor="middle">N Armies × 10 minions · no upper cap</text>
+      <text class="d-anno" x="540" y="290" text-anchor="middle">resumable across sessions, reboots, machines</text>
+      <text class="d-anno" x="540" y="310" text-anchor="middle">each Army is its own process</text>
+    </svg>
+    <figcaption>Same shape. Different substrate. The runtime boundary is the architectural difference.</figcaption>
+    <div class="dl-wrap">
+      <button type="button" class="dl-btn" onclick="downloadDiagram('diag-comparison', 'workflows-vs-minion.png')">Download PNG</button>
+    </div>
+  </figure>
+
+  <h2>Side by side</h2>
+
+  <p class="section-meta">134 words &middot; 1 min read</p>
+
+  <table id="comparison-table">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Dynamic Workflows</th>
+        <th>Minion Framework</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Orchestrator</td>
+        <td>JS script Claude wrote</td>
+        <td>SQLite WAL <code>work_queue</code> + worker prompt</td>
+      </tr>
+      <tr>
+        <td>Where intermediate state lives</td>
+        <td>Script variables</td>
+        <td>Per-Army scratch dirs + DB rows</td>
+      </tr>
+      <tr>
+        <td>Concurrency unit</td>
+        <td>Subagents the runtime spawns</td>
+        <td>Minions each Army fans out via the Agent tool</td>
+      </tr>
+      <tr>
+        <td>Concurrency limit</td>
+        <td>16 concurrent, 1,000 total <em>per run</em></td>
+        <td>~10 minions × N Armies; at peak ~160 in flight</td>
+      </tr>
+      <tr>
+        <td>Spawn a new worker</td>
+        <td>The runtime does it</td>
+        <td>Open a terminal, paste the worker prompt</td>
+      </tr>
+      <tr>
+        <td>Resume after Ctrl-C</td>
+        <td>Within the same session only</td>
+        <td>Across sessions, reboots, machines — the queue is durable</td>
+      </tr>
+      <tr>
+        <td>Adversarial review of findings</td>
+        <td>First-class, built into the pattern</td>
+        <td>Bolted on after the fact, as a separate validation pass</td>
+      </tr>
+      <tr>
+        <td>Observability</td>
+        <td><code>/workflows</code> view, per-phase token spend</td>
+        <td>Gru heartbeat every 5 min via <code>/loop</code></td>
+      </tr>
+      <tr>
+        <td>Hands-on cost</td>
+        <td>Launch and ignore</td>
+        <td>Babysit through 5-hour budget windows</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="table-actions">
+    <button type="button" class="dl-btn" onclick="copyTableAsMarkdown('comparison-table', this)">Copy as Markdown</button>
+  </div>
+
+  <h2>Tradeoffs</h2>
+
+  <p class="section-meta">299 words &middot; 1 min read</p>
+
+  <p><strong>The Minion wins on:</strong></p>
+
+  <p><strong>1. No concurrency cap.</strong> Dynamic Workflows cap at 16 concurrent and 1,000 total per run; the Minion has no equivalent cap because the orchestrator is a database, not a runtime. The actual limit is the Anthropic plan rate budget, not the architecture.</p>
+
+  <p><strong>2. Resume survives anything.</strong> A workflow run resumes only inside the session that launched it — close the terminal and the next session starts from scratch. The Minion's claims survive Ctrl-C, terminal close, OS reboot, hard crash. My corpus ran across two laptops over three weeks; the queue did not care which one was awake.</p>
+
+  <p><strong>3. Cross-machine fan-out.</strong> Put the SQLite file on a network mount and a second machine becomes Army #5. Nothing in the worker prompt needs to change.</p>
+
+  <p><strong>Dynamic Workflows wins on:</strong></p>
+
+  <p><strong>4. Adversarial review.</strong> The runtime can have agent B independently re-grade agent A's claim before either lands. The Minion doesn't have this baked in — you can bolt it on as a separate validation pass, but it's nicer when the runtime gives it to you free.</p>
+
+  <p><strong>5. Observability.</strong> The <code>/workflows</code> view shows phases, agent prompts, tool calls, and token spend in one place. My equivalent — Gru, the <code>/loop</code> heartbeat, three Python scripts — works once built, but you have to build and debug it. (My CSV parser silently crashed for a week on a row containing <code>"0+requeued"</code>, a shell expression an Army had written into the fail column. A real progress view would have caught it in ten seconds.)</p>
+
+  <p><strong>6. Plan-budget pacing.</strong> The Max plan has a five-hour rolling rate-limit window. With sixteen Armies live, I burned through 97% of one bucket in <strong>35 minutes</strong>; the sustainable cadence turned out to be four or five. Workflows paces itself; the Minion makes you do the pacing.</p>
+
+  <h2>What it cost, honestly</h2>
+
+  <p class="section-meta">212 words &middot; 1 min read</p>
+
+  <p>The cleanest way to score this is against the API counterfactual I would have run if the subscription arbitrage didn't exist:</p>
+
+  <table id="cost-table">
+    <thead>
+      <tr>
+        <th>Plan</th>
+        <th>Records</th>
+        <th>API cost</th>
+        <th>Sub cost</th>
+        <th>Arbitrage</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Original plan: 25K records, all Opus 4.7</td>
+        <td>25,000</td>
+        <td><span class="draft-edit">~$1,200</span></td>
+        <td>$200</td>
+        <td><strong><span class="draft-edit">~6×</span></strong></td>
+      </tr>
+      <tr>
+        <td>Post-audit mix (Opus early, Sonnet after)</td>
+        <td>25,000</td>
+        <td><span class="draft-edit">~$700</span></td>
+        <td>$200</td>
+        <td><span class="draft-edit">~3.5×</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="table-actions">
+    <button type="button" class="dl-btn" onclick="copyTableAsMarkdown('cost-table', this)">Copy as Markdown</button>
+  </div>
+
+  <p class="footnote draft-edit">Per-record costs based on actual measurement against Opus 4.7's tokenizer, sampled over 20 randomly-drawn threads that match the project's queue filter (script: <code>pilot/measure_tokens.py</code>). Sonnet 4.6 priced at $3/M input, $15/M output.</p>
+
+  <p class="draft-edit">Both numbers are real, and both are honest. The 6× compares against the Opus-only plan I would have run on the API; the 3.5× compares against the cheaper model-mix I converged on after auditing. The arbitrage isn't dramatic — but the article isn't about the dollar savings, it's about the architecture that lets the next thousand records cost the same as the previous zero.</p>
+
+  <div class="callout">
+    <p><strong>The mechanism is the same in all three framings:</strong> the subscription is a fixed monthly cap, not a token meter. Once you've paid it, the next thousand records cost the same as the previous zero. The Minion (and Dynamic Workflows) are just the plumbing that lets you push the meter to the wall.</p>
+  </div>
+
+  <div class="draft-edit">
+
+  <h2>One more thing</h2>
+
+  <p class="section-meta">140 words &middot; 1 min read</p>
+
+  <p>After this worked, I went looking to see if anyone else had built something similar — they had. Open-source tools like <a href="https://amux.io/">amux</a> and <a href="https://github.com/ComposioHQ/agent-orchestrator">Agent Orchestrator</a> converged on the same primitive: a SQLite atomic-claim queue coordinating parallel Claude sessions. Agent Orchestrator's docs even use the exact "SQLite CAS for atomic claim" phrasing I built mine on. That convergence is reassuring; it's the right shape, not just my shape.</p>
+
+  <p>What's specific about my version is that it was built to ride a Claude Code subscription rather than the API. Gru pulls the undocumented <code>/oauth/usage</code> endpoint and shows where you are in the 5-hour bucket; the per-Army scratch dirs survive the crashes you get when a flat-rate bucket runs dry; the fan-out is tuned for the harness's actual concurrency throttle. If anyone wants to bolt that subscription-specific layer onto an existing fleet orchestrator, <a href="#">github.com/nedwize/minion-framework</a> is where the code will live.</p>
+
+  </div>
+
+  <footer>
+    <span>2026-06-05</span>
+    <span class="tag">filed under: agents / claude code / fine-tuning / orchestration</span>
+  </footer>
+</article>
+<script>
+(function () {
+  // CSS rules that need to be inlined into any cloned SVG before we
+  // rasterize it, because external stylesheets don't follow the clone
+  // into an Image element. Keep in sync with the .diagram .d-* rules
+  // in <style> above.
+  var INLINE_CSS = [
+    '.d-box { fill: #f6f3ec; stroke: #1c1b18; stroke-width: 1; }',
+    '.d-box-emph { fill: rgba(122, 59, 31, 0.07); stroke: #7a3b1f; stroke-width: 1.5; }',
+    '.d-lane { fill: none; stroke: #cfc8b8; stroke-width: 1; stroke-dasharray: 5 4; }',
+    '.d-divider { stroke: #cfc8b8; stroke-width: 1; stroke-dasharray: 4 4; }',
+    '.d-title { font: 600 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill: #1c1b18; letter-spacing: -0.005em; }',
+    '.d-label { font: 13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill: #1c1b18; }',
+    '.d-label-bold { font: 600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill: #1c1b18; }',
+    '.d-mono { font: 11px "SF Mono",Menlo,Consolas,monospace; fill: #6a6557; }',
+    '.d-anno { font: italic 11px -apple-system,sans-serif; fill: #6a6557; }',
+    '.d-arrow { fill: none; stroke: #1c1b18; stroke-width: 1; }',
+    '.d-arrow-emph { fill: none; stroke: #7a3b1f; stroke-width: 1.5; }',
+    '.d-dashed { fill: none; stroke: #6a6557; stroke-width: 1; stroke-dasharray: 3 3; }',
+    '.d-badge { fill: #f6f3ec; stroke: #7a3b1f; stroke-width: 1; }',
+    '.d-badge-text { font: 600 11px "SF Mono",Menlo,monospace; fill: #7a3b1f; }'
+  ].join('\n');
+
+  window.copyCode = function (btn) {
+    var pre = btn.parentElement.querySelector('pre');
+    if (!pre) return;
+    var text = pre.textContent.replace(/^\n+/, '').replace(/\n\s*$/, '');
+    var done = function () {
+      var orig = btn.dataset.origLabel || btn.textContent;
+      btn.dataset.origLabel = orig;
+      btn.textContent = 'Copied';
+      btn.classList.add('copied');
+      setTimeout(function () {
+        btn.textContent = orig;
+        btn.classList.remove('copied');
+      }, 1400);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        document.body.removeChild(ta);
+      });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+  };
+
+  window.copyTableAsMarkdown = function (tableId, btn) {
+    var table = document.getElementById(tableId);
+    if (!table) return;
+
+    var cellToMd = function (cell) {
+      var clone = cell.cloneNode(true);
+      clone.querySelectorAll('code').forEach(function (n) {
+        n.replaceWith('`' + n.textContent + '`');
+      });
+      clone.querySelectorAll('strong').forEach(function (n) {
+        n.replaceWith('**' + n.textContent + '**');
+      });
+      clone.querySelectorAll('em').forEach(function (n) {
+        n.replaceWith('*' + n.textContent + '*');
+      });
+      return clone.textContent.trim().replace(/\s+/g, ' ');
+    };
+
+    var rowToMd = function (tr) {
+      var cells = [];
+      tr.querySelectorAll('th, td').forEach(function (c) { cells.push(cellToMd(c)); });
+      return '| ' + cells.join(' | ') + ' |';
+    };
+
+    var lines = [];
+    var headerCells = 0;
+    var thead = table.querySelector('thead');
+    if (thead) {
+      thead.querySelectorAll('tr').forEach(function (tr) {
+        lines.push(rowToMd(tr));
+        headerCells = tr.querySelectorAll('th, td').length;
+      });
+      var sep = [];
+      for (var i = 0; i < headerCells; i++) sep.push('---');
+      lines.push('| ' + sep.join(' | ') + ' |');
+    }
+    var tbody = table.querySelector('tbody');
+    if (tbody) {
+      tbody.querySelectorAll('tr').forEach(function (tr) { lines.push(rowToMd(tr)); });
+    }
+
+    var md = lines.join('\n');
+
+    var done = function () {
+      var orig = btn.dataset.origLabel || btn.textContent;
+      btn.dataset.origLabel = orig;
+      btn.textContent = 'Copied';
+      btn.classList.add('copied');
+      setTimeout(function () {
+        btn.textContent = orig;
+        btn.classList.remove('copied');
+      }, 1400);
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(md).then(done).catch(function () {
+        var ta = document.createElement('textarea');
+        ta.value = md;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        document.body.removeChild(ta);
+      });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = md;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+  };
+
+  window.downloadDiagram = function (svgId, filename, scale) {
+    scale = scale || 3;
+    var src = document.getElementById(svgId);
+    if (!src) { console.error('SVG not found: ' + svgId); return; }
+    var clone = src.cloneNode(true);
+
+    var SVG_NS = 'http://www.w3.org/2000/svg';
+    var vb = (clone.getAttribute('viewBox') || '0 0 720 360').split(/\s+/).map(Number);
+
+    var styleEl = document.createElementNS(SVG_NS, 'style');
+    styleEl.textContent = INLINE_CSS;
+    clone.insertBefore(styleEl, clone.firstChild);
+
+    var bg = document.createElementNS(SVG_NS, 'rect');
+    bg.setAttribute('x', vb[0]);
+    bg.setAttribute('y', vb[1]);
+    bg.setAttribute('width', vb[2]);
+    bg.setAttribute('height', vb[3]);
+    bg.setAttribute('fill', '#f6f3ec');
+    clone.insertBefore(bg, styleEl.nextSibling);
+
+    clone.setAttribute('xmlns', SVG_NS);
+    clone.setAttribute('width', vb[2]);
+    clone.setAttribute('height', vb[3]);
+
+    var svgString = new XMLSerializer().serializeToString(clone);
+    var svgBlob = new Blob(['<?xml version="1.0" standalone="no"?>\n', svgString], { type: 'image/svg+xml;charset=utf-8' });
+    var url = URL.createObjectURL(svgBlob);
+
+    var img = new Image();
+    img.onload = function () {
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.round(vb[2] * scale);
+      canvas.height = Math.round(vb[3] * scale);
+      var ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+
+      canvas.toBlob(function (blob) {
+        var a = document.createElement('a');
+        var dlUrl = URL.createObjectURL(blob);
+        a.href = dlUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(dlUrl); }, 1000);
+      }, 'image/png');
+    };
+    img.onerror = function (e) {
+      console.error('Failed to render SVG for download', e);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  };
+})();
+</script>
+</body>
+</html>

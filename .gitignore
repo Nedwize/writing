@@ -1,0 +1,9 @@
+# Generated image assets — kept local, not tracked
+**/images/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.mp4
+*.mov

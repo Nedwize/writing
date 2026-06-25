@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The Minion Framework — Build Log № 06 (Sans)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Hanken+Grotesk:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,500;1,600;1,700&display=swap" />
+<style>
+  /* ===========================================
+     THEME — "Field Manual" (Sans variant)
+     Headlines use Hanken Grotesk instead of Fraunces.
+     Change these variables to retune the whole deck.
+     =========================================== */
+  :root {
+    --paper: #f6f3ec;
+    --paper-2: #efeadd;
+    --paper-3: #ebe6d6;
+    --ink: #1c1b18;
+    --muted: #6a6557;
+    --rust: #7a3b1f;
+    --rust-soft: rgba(122, 59, 31, 0.08);
+    --rust-line: rgba(122, 59, 31, 0.30);
+    --rule: #cfc8b8;
+    --green: #4a7a6f;
+    --stage-bg: #e7e1d3;
+
+    --font-display: 'Hanken Grotesk', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+    --font-body: 'Hanken Grotesk', sans-serif;
+
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* ===========================================
+     FIXED 16:9 STAGE (from viewport-base.css)
+     =========================================== */
+  html, body {
+    width: 100%; height: 100%; margin: 0; overflow: hidden;
+    background: var(--stage-bg);
+  }
+  .deck-viewport { position: fixed; inset: 0; overflow: hidden; background: var(--stage-bg); }
+  .deck-stage {
+    position: absolute; left: 0; top: 0; width: 1920px; height: 1080px;
+    overflow: hidden; transform-origin: 0 0; background: var(--paper);
+  }
+  .slide {
+    position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden;
+    display: block; visibility: hidden; opacity: 0; pointer-events: none;
+    background: var(--paper);
+    font-family: var(--font-body); color: var(--ink);
+  }
+  .slide.active, .slide.visible {
+    visibility: visible; opacity: 1; pointer-events: auto; z-index: 1;
+  }
+  img, video, canvas, svg { max-width: 100%; max-height: 100%; }
+  .deck-controls { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 1000; }
+  @media print {
+    html, body { width: 1920px; height: auto; overflow: visible; background: #fff; }
+    .deck-viewport { position: static; overflow: visible; background: #fff; }
+    .deck-stage { position: static; width: auto; height: auto; transform: none !important; background: none; }
+    .slide { position: relative; display: block !important; visibility: visible !important; opacity: 1 !important;
+      pointer-events: auto !important; width: 1920px; height: 1080px; break-after: page; page-break-after: always; }
+    .slide:last-child { break-after: auto; page-break-after: auto; }
+    .deck-controls { display: none !important; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.2s !important; }
+  }
+
+  /* ===========================================
+     SHARED DECORATION — ledger grid + frame
+     =========================================== */
+  .slide::before {                       /* faint engineering grid */
+    content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      linear-gradient(var(--rule) 1px, transparent 1px),
+      linear-gradient(90deg, var(--rule) 1px, transparent 1px);
+    background-size: 64px 64px; opacity: 0.14;
+  }
+  .pad { position: absolute; inset: 0; padding: 92px 110px; z-index: 2;
+    display: flex; flex-direction: column; }
+
+  /* running header / footer chrome */
+  .chrome-top, .chrome-bot {
+    position: absolute; left: 110px; right: 110px; z-index: 3;
+    font-family: var(--font-mono); font-size: 19px; letter-spacing: 0.10em;
+    text-transform: uppercase; color: var(--rust);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .chrome-top { top: 54px; padding-bottom: 14px; }
+  .chrome-bot { bottom: 54px; padding-top: 14px; color: var(--muted); }
+  .chrome-top::after, .chrome-bot::before {
+    content: ""; position: absolute; left: 0; right: 0; height: 1.5px; background: var(--rust-line);
+  }
+  .chrome-top::after { bottom: 0; } .chrome-bot::before { top: 0; }
+
+  /* ===========================================
+     ANIMATION — staggered reveals on .visible
+     =========================================== */
+  .reveal { opacity: 0; transform: translateY(34px);
+    transition: opacity 0.7s var(--ease), transform 0.7s var(--ease); }
+  .slide.visible .reveal { opacity: 1; transform: translateY(0); }
+  .reveal.d1 { transition-delay: 0.10s; }
+  .reveal.d2 { transition-delay: 0.22s; }
+  .reveal.d3 { transition-delay: 0.34s; }
+  .reveal.d4 { transition-delay: 0.46s; }
+  .reveal.d5 { transition-delay: 0.58s; }
+  .reveal.d6 { transition-delay: 0.70s; }
+  .reveal-img { opacity: 0; transform: scale(1.04); filter: blur(6px);
+    transition: opacity 1s var(--ease), transform 1.1s var(--ease), filter 1s var(--ease); }
+  .slide.visible .reveal-img { opacity: 1; transform: scale(1); filter: blur(0); }
+
+  /* ===========================================
+     TYPE ROLES  (Sans: weightier display, tighter tracking)
+     =========================================== */
+  .kicker { font-family: var(--font-mono); font-size: 24px; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--muted); }
+  .kicker .num { color: var(--rust); }
+  h1 { font-family: var(--font-display); font-weight: 800; color: var(--ink);
+    line-height: 0.98; letter-spacing: -0.025em; }
+  h2 { font-family: var(--font-display); font-weight: 800; color: var(--ink);
+    line-height: 1.0; letter-spacing: -0.022em; }
+  .by { color: var(--rust); font-style: italic; font-weight: 700; }
+  .lede { font-size: 33px; line-height: 1.5; color: #46423a; }
+  strong { color: var(--rust); font-weight: 700; }
+
+  /* tag strip used on section dividers */
+  .tagstrip { display: flex; align-items: center; gap: 16px;
+    font-family: var(--font-mono); font-size: 20px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--rust); }
+  .tagstrip .sq { width: 13px; height: 13px; background: var(--rust); }
+  .tagstrip .ln { flex: 1; height: 1px; background: var(--rule); }
+
+  /* ===========================================
+     SLIDE 1 — COVER
+     =========================================== */
+  .cover .layout { position: absolute; inset: 0; display: grid; grid-template-columns: 1060px 1fr; z-index: 2; }
+  .cover .col { padding: 96px 64px 80px 110px; display: flex; flex-direction: column; }
+  .cover h1 { margin-top: 18px; font-size: 102px; }
+  .cover .sub { margin-top: 34px; font-size: 30px; line-height: 1.5; max-width: 38ch; color: #46423a; }
+  .cover .ledger { margin-top: auto; display: flex; border: 1px solid var(--rule);
+    border-radius: 4px; overflow: hidden; font-family: var(--font-mono); }
+  .cover .ledger div { flex: 1; padding: 20px 24px; border-right: 1px solid var(--rule); }
+  .cover .ledger div:last-child { border-right: 0; }
+  .cover .ledger .k { font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .cover .ledger .v { margin-top: 6px; font-size: 34px; font-weight: 700; color: var(--rust); }
+  .plate { position: relative; overflow: hidden; border-left: 1px solid var(--rule); }
+  .plate img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; max-width: none; max-height: none; }
+  .plate::after { content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, var(--paper) 0%, transparent 20%); }
+  .plate .pl { position: absolute; top: 40px; right: 40px; z-index: 3;
+    font-family: var(--font-mono); font-size: 17px; letter-spacing: 0.1em; color: var(--rust);
+    text-transform: uppercase; background: rgba(246,243,236,0.85); padding: 6px 12px; border: 1px solid var(--rust); }
+  .plate .cap { position: absolute; left: 40px; bottom: 38px; right: 40px; z-index: 3;
+    font-family: var(--font-mono); font-size: 18px; color: #2a2620; line-height: 1.45;
+    background: rgba(246,243,236,0.85); border-left: 3px solid var(--rust); padding: 12px 16px; }
+
+  /* ===========================================
+     SECTION DIVIDER
+     =========================================== */
+  .divider .pad { justify-content: center; }
+  .divider .big-num { font-family: var(--font-display); font-weight: 900; font-size: 300px;
+    color: var(--rust-soft); line-height: 0.8; position: absolute; right: 96px; top: 60px; z-index: 1; }
+  .divider h1 { font-size: 110px; max-width: 20ch; margin-top: 26px; }
+  .divider .lede { margin-top: 36px; max-width: 44ch; }
+
+  /* ===========================================
+     STATEMENT / BIG-NUMBER
+     =========================================== */
+  .statement .pad { justify-content: center; align-items: flex-start; }
+  .statement h2 { font-size: 84px; max-width: 24ch; }
+  .bignum-row { display: flex; gap: 90px; margin-top: 30px; }
+  .bignum .n { font-family: var(--font-display); font-weight: 900; font-size: 144px; color: var(--rust); line-height: 0.9; letter-spacing: -0.02em; }
+  .bignum .l { font-family: var(--font-mono); font-size: 22px; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--muted); margin-top: 10px; }
+  .bignum.ghost .n { color: var(--ink); -webkit-text-stroke: 0; }
+
+  /* generic content heading slide */
+  .content h2 { font-size: 70px; max-width: 22ch; }
+  .content .lede { margin-top: 30px; max-width: 50ch; }
+
+  /* two-column with image */
+  .split .layout { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 820px; z-index: 2; }
+  .split .col { padding: 150px 70px 120px 110px; display: flex; flex-direction: column; justify-content: center; }
+  .split h2 { font-size: 68px; }
+  .split .lede { margin-top: 28px; max-width: 30ch; }
+
+  /* numbered list (primitives) */
+  .steps { margin-top: 50px; display: flex; flex-direction: column; gap: 30px; max-width: 80%; }
+  .step { display: grid; grid-template-columns: 92px 1fr; align-items: start; gap: 30px; }
+  .step .idx { font-family: var(--font-display); font-weight: 900; font-size: 64px; color: var(--rust); line-height: 1; }
+  .step .body { padding-top: 8px; }
+  .step .t { font-size: 34px; font-weight: 700; color: var(--ink); }
+  .step .d { font-size: 25px; line-height: 1.45; color: var(--muted); margin-top: 6px; }
+  .step .d code { font-family: var(--font-mono); font-size: 0.88em; background: var(--paper-3);
+    padding: 0.05em 0.35em; border-radius: 3px; color: var(--rust); }
+
+  /* code card */
+  .codecard { margin-top: 44px; background: var(--paper-3); border: 1px solid var(--rule);
+    border-left: 4px solid var(--rust); border-radius: 6px; padding: 36px 42px;
+    font-family: var(--font-mono); font-size: 30px; line-height: 1.7; color: var(--ink); max-width: 1100px; }
+  .codecard .cmt { color: var(--muted); }
+  .codecard .kw { color: var(--rust); font-weight: 600; }
+
+  /* comparison table */
+  .cmp table { width: 100%; border-collapse: collapse; margin-top: 40px; font-size: 28px; }
+  .cmp th, .cmp td { text-align: left; padding: 22px 24px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  .cmp thead th { font-family: var(--font-mono); font-size: 21px; letter-spacing: 0.06em;
+    text-transform: uppercase; border-bottom: 2px solid var(--ink); }
+  .cmp thead th.dw { color: var(--muted); }
+  .cmp thead th.mf { color: var(--rust); }
+  .cmp td.row { font-family: var(--font-mono); font-size: 22px; text-transform: uppercase;
+    letter-spacing: 0.03em; color: var(--muted); width: 26%; }
+  .cmp td.mfcell { color: var(--ink); font-weight: 700; }
+  .cmp tr:last-child td { border-bottom: 0; }
+
+  /* two-up "where each wins" */
+  .versus .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; margin-top: 54px; }
+  .vcard { border: 1px solid var(--rule); border-radius: 8px; padding: 44px 46px; background: var(--paper-2); }
+  .vcard.accent { border-color: var(--rust); border-width: 1.5px; background: var(--rust-soft); }
+  .vcard .h { font-family: var(--font-display); font-weight: 800; font-size: 40px; color: var(--ink); letter-spacing: -0.02em; }
+  .vcard.accent .h { color: var(--rust); }
+  .vcard ul { list-style: none; margin-top: 26px; display: flex; flex-direction: column; gap: 20px; }
+  .vcard li { font-size: 27px; line-height: 1.4; color: #46423a; padding-left: 38px; position: relative; }
+  .vcard li::before { content: "▪"; position: absolute; left: 0; top: 0; color: var(--rust); font-size: 24px; }
+
+  /* closing */
+  .closing .pad { justify-content: center; }
+  .closing h1 { font-size: 90px; max-width: 22ch; }
+  .closing .lede { margin-top: 40px; max-width: 52ch; }
+  .closing .sign { margin-top: 64px; font-family: var(--font-mono); font-size: 22px;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--rust);
+    display: flex; gap: 16px; align-items: center; }
+  .closing .sign .ln { width: 80px; height: 1.5px; background: var(--rust); }
+
+  /* ===========================================
+     AUTHOR ("about") + CONNECT slides
+     =========================================== */
+  .about .pad { justify-content: center; }
+  .about .handle { font-family: var(--font-mono); font-size: 30px; color: var(--rust);
+    letter-spacing: 0.02em; margin-top: 12px; }
+  .about .creds { display: grid; grid-template-columns: 1fr 1fr; gap: 36px 64px;
+    margin-top: 52px; max-width: 1480px; }
+  .about .cred { border-left: 3px solid var(--rust); padding: 4px 0 4px 28px; }
+  .about .cred .ck { font-family: var(--font-mono); font-size: 19px; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--rust); }
+  .about .cred .cv { font-size: 29px; line-height: 1.36; color: #46423a; margin-top: 8px; }
+  .connect .pad { justify-content: center; }
+  .connect .big { font-family: var(--font-display); font-weight: 900; font-size: 150px;
+    color: var(--rust); line-height: 0.9; letter-spacing: -0.03em; }
+  .connect .tagline { font-family: var(--font-mono); font-size: 26px; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--muted); margin-top: 26px; }
+  .connect .blurb { font-size: 33px; line-height: 1.5; color: #46423a; margin-top: 30px; max-width: 46ch; }
+
+  /* ===========================================
+     PROGRESS + EDIT CHROME (outside stage)
+     =========================================== */
+  .progress { position: fixed; bottom: 0; left: 0; height: 4px; background: var(--rust);
+    z-index: 1000; transition: width 0.4s var(--ease); }
+  .pagenum { position: fixed; right: 26px; bottom: 20px; z-index: 1000;
+    font-family: var(--font-mono); font-size: 15px; letter-spacing: 0.1em; color: var(--muted); }
+  .edit-hotzone { position: fixed; top: 0; left: 0; width: 80px; height: 80px; z-index: 10000; cursor: pointer; }
+  .edit-toggle { position: fixed; top: 18px; left: 18px; z-index: 10001; opacity: 0; pointer-events: none;
+    transition: opacity 0.3s ease; background: var(--ink); color: var(--paper); border: none;
+    border-radius: 6px; padding: 10px 14px; font-size: 18px; cursor: pointer; }
+  .edit-toggle.show, .edit-toggle.active { opacity: 1; pointer-events: auto; }
+  .edit-toggle.active { background: var(--rust); }
+  [contenteditable="true"] { outline: 2px dashed var(--rust); outline-offset: 4px; border-radius: 3px; cursor: text; }
+</style>
+</head>
+<body>
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- ============ SLIDE 1 — COVER ============ -->
+    <section class="slide cover active">
+      <div class="layout">
+        <div class="col">
+          <div class="tagstrip reveal d1"><span class="sq"></span><span>Build Log</span><span class="ln"></span><span>№ 06</span></div>
+          <div class="kicker reveal d2" style="margin-top:78px;">Two weeks before Anthropic shipped it</div>
+          <h1 class="reveal d3">The Minion <span class="by">Framework</span></h1>
+          <p class="sub reveal d4">A SQLite-backed agent fan-out that built a 25,000-record fine-tuning corpus — and accidentally reinvented Dynamic Workflows.</p>
+          <div class="ledger reveal d5">
+            <div><div class="k">Budget</div><div class="v">$200</div></div>
+            <div><div class="k">API cost</div><div class="v">~$7.2K</div></div>
+            <div><div class="k">Arbitrage</div><div class="v">~36×</div></div>
+          </div>
+        </div>
+        <div class="plate">
+          <img class="reveal-img" src="../images/image1_hero_classroom.jpeg" alt="Gru and the Minion Armies, Monet-style" />
+          <span class="pl">Plate I</span>
+          <div class="cap reveal d4">Gru addresses the Minion Armies. The queue is the only thing that knows where everyone is.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ ABOUT THE AUTHOR (after cover) ============ -->
+    <section class="slide about">
+      <div class="chrome-top"><span>00 · Who's telling you this</span><span>The Minion Framework</span></div>
+      <div class="pad">
+        <div class="kicker reveal d1">Who's telling you this</div>
+        <h2 class="reveal d2" style="font-size:88px;">Nakshatra Saxena</h2>
+        <div class="handle reveal d2">@nedwize</div>
+        <div class="creds">
+          <div class="cred reveal d3"><div class="ck">Early Claude user</div><div class="cv">Power user since the early days — I've burned an early-stage engineer's salary in Claude Code.</div></div>
+          <div class="cred reveal d4"><div class="ck">−1 → 0 operator</div><div class="cv">I take startups from before-zero to one.</div></div>
+          <div class="cred reveal d5"><div class="ck">AI consultant</div><div class="cv">I help teams put LLMs into production.</div></div>
+          <div class="cred reveal d6"><div class="ck">Proof of work</div><div class="cv">Built Dynamic Workflows two weeks before Anthropic shipped it.</div></div>
+        </div>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>@nedwize</span></div>
+    </section>
+
+    <!-- ============ SLIDE 2 — SECTION: WHAT IS THIS ABOUT ============ -->
+    <section class="slide divider">
+      <div class="chrome-top"><span>01 · What this is about</span><span>The Minion Framework</span></div>
+      <div class="big-num">01</div>
+      <div class="pad">
+        <div class="tagstrip reveal d1" style="max-width:560px;"><span class="sq"></span><span>The Premise</span><span class="ln"></span></div>
+        <h1 class="reveal d2">Building a training corpus, on a hobby budget</h1>
+        <p class="lede reveal d3">A story about labeling 25,000 forum threads with Opus-class reasoning — without paying Opus-class prices.</p>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 3 — CONTEXT ============ -->
+    <section class="slide content">
+      <div class="chrome-top"><span>01 · What this is about</span><span>The Minion Framework</span></div>
+      <div class="pad" style="justify-content:center;">
+        <div class="kicker reveal d1">The goal</div>
+        <h2 class="reveal d2">Turn a public Q&amp;A forum into a <span class="by">vertical fine-tuning</span> dataset.</h2>
+        <p class="lede reveal d3" style="margin-top:34px;">Credentialed experts answering real questions. I wanted one structured JSON record per thread — persona, intent, situation, answer quality — at <strong>corpus scale</strong>, because the interesting personas only show up in single-digit percentages.</p>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 4 — SECTION: WHAT I WAS TASKED TO DO ============ -->
+    <section class="slide divider">
+      <div class="chrome-top"><span>02 · The task</span><span>The Minion Framework</span></div>
+      <div class="big-num">02</div>
+      <div class="pad">
+        <div class="tagstrip reveal d1" style="max-width:560px;"><span class="sq"></span><span>The Task</span><span class="ln"></span></div>
+        <h1 class="reveal d2">25,000 records. One locked schema.</h1>
+        <p class="lede reveal d3">Each labeled record feeds three downstream datasets: a classifier fine-tune, an SFT corpus, and a DPO preference set.</p>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ DATA FORK — Reddit thread → JSON record → 3 datasets ============ -->
+    <section class="slide content">
+      <div class="chrome-top"><span>02 · The task</span><span>The Minion Framework</span></div>
+      <div class="pad" style="justify-content:flex-start;">
+        <div class="kicker reveal d1">One record per thread</div>
+        <h2 class="reveal d2" style="font-size:50px;">From a Reddit thread to a labeled JSON record.</h2>
+        <div class="reveal d3" style="margin-top:22px; display:flex; justify-content:center;">
+          <svg width="1500" height="552" viewBox="0 0 1520 560" role="img" aria-label="A raw Reddit thread converts to a labeled JSON record, which forks into three training datasets.">
+            <defs>
+              <marker id="fk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 z" fill="#7a3b1f" /></marker>
+            </defs>
+
+            <!-- LEFT: raw reddit thread -->
+            <rect x="10" y="170" width="330" height="220" rx="6" fill="#efeadd" stroke="#7a3b1f" stroke-width="2"/>
+            <text x="175" y="210" text-anchor="middle" font-family="Hanken Grotesk,sans-serif" font-weight="700" font-size="27" fill="#1c1b18">Reddit thread</text>
+            <line x1="36" y1="230" x2="314" y2="230" stroke="#cfc8b8" stroke-width="1"/>
+            <text x="38" y="270" font-family="IBM Plex Mono,monospace" font-size="19" fill="#46423a">Q: real user question</text>
+            <text x="38" y="304" font-family="IBM Plex Mono,monospace" font-size="19" fill="#46423a">A: credentialed expert</text>
+            <text x="38" y="344" font-family="IBM Plex Mono,monospace" font-size="18" fill="#6a6557">+ score · flair · dates</text>
+
+            <!-- arrow thread -> json -->
+            <path d="M342 280 L424 280" fill="none" stroke="#7a3b1f" stroke-width="2.5" marker-end="url(#fk)"/>
+            <text x="383" y="266" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-style="italic" font-size="16" fill="#6a6557">Opus</text>
+
+            <!-- CENTER: labeled JSON record -->
+            <rect x="430" y="90" width="500" height="380" rx="6" fill="rgba(122,59,31,0.07)" stroke="#7a3b1f" stroke-width="2"/>
+            <text x="680" y="132" text-anchor="middle" font-family="Hanken Grotesk,sans-serif" font-weight="700" font-size="27" fill="#1c1b18">labeled JSON record</text>
+            <line x1="456" y1="150" x2="904" y2="150" stroke="#cfc8b8" stroke-width="1"/>
+            <g font-family="IBM Plex Mono,monospace" font-size="19" fill="#1c1b18">
+              <text x="460" y="192">thread_id · subreddit</text>
+              <text x="460" y="228">persona · situation · problem</text>
+              <text x="460" y="264">intent · lifecycle_stage · urgency</text>
+              <text x="460" y="300">emotion · money_at_stake</text>
+              <text x="460" y="336">resolution {</text>
+              <text x="478" y="368" fill="#46423a">answered_by, answer_quality }</text>
+              <text x="460" y="404">tool_solvability · key_quote</text>
+              <text x="460" y="440">confidence · needs_review</text>
+            </g>
+
+            <!-- branch arrows json -> datasets -->
+            <path d="M930 280 C 992 280, 992 130, 1052 130" fill="none" stroke="#7a3b1f" stroke-width="2" marker-end="url(#fk)"/>
+            <path d="M930 280 L 1052 280" fill="none" stroke="#7a3b1f" stroke-width="2" marker-end="url(#fk)"/>
+            <path d="M930 280 C 992 280, 992 430, 1052 430" fill="none" stroke="#7a3b1f" stroke-width="2" marker-end="url(#fk)"/>
+            <text x="998" y="118" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-style="italic" font-size="15" fill="#6a6557">training data</text>
+            <text x="1000" y="264" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-style="italic" font-size="15" fill="#6a6557">quality filter</text>
+            <text x="998" y="418" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-style="italic" font-size="15" fill="#6a6557">quality filter</text>
+
+            <!-- RIGHT: three datasets -->
+            <rect x="1060" y="80" width="450" height="100" rx="6" fill="#f6f3ec" stroke="#1c1b18" stroke-width="1.5"/>
+            <text x="1285" y="120" text-anchor="middle" font-family="Hanken Grotesk,sans-serif" font-weight="700" font-size="23" fill="#1c1b18">Classifier fine-tune</text>
+            <text x="1285" y="152" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="19" fill="#6a6557">thread → tags</text>
+
+            <rect x="1060" y="230" width="450" height="100" rx="6" fill="#f6f3ec" stroke="#1c1b18" stroke-width="1.5"/>
+            <text x="1285" y="270" text-anchor="middle" font-family="Hanken Grotesk,sans-serif" font-weight="700" font-size="23" fill="#1c1b18">SFT corpus</text>
+            <text x="1285" y="302" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="19" fill="#6a6557">(question, expert answer)</text>
+
+            <rect x="1060" y="380" width="450" height="100" rx="6" fill="#f6f3ec" stroke="#1c1b18" stroke-width="1.5"/>
+            <text x="1285" y="420" text-anchor="middle" font-family="Hanken Grotesk,sans-serif" font-weight="700" font-size="23" fill="#1c1b18">DPO preference pairs</text>
+            <text x="1285" y="452" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="19" fill="#6a6557">(low-quality vs high)</text>
+          </svg>
+        </div>
+        <p class="lede reveal d4" style="font-size:23px; margin-top:18px; max-width:74ch;">The labels are training data in branch 1, and a quality filter over the thread's own text in branches 2 &amp; 3.</p>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 5 — THE CATCH (big number) ============ -->
+    <section class="slide statement">
+      <div class="chrome-top"><span>02 · The task</span><span>The Minion Framework</span></div>
+      <div class="pad">
+        <div class="kicker reveal d1">The catch</div>
+        <h2 class="reveal d2" style="font-size:78px;">Opus-class reasoning, on every thread.</h2>
+        <div class="bignum-row">
+          <div class="bignum reveal d3">
+            <div class="n">$7,250</div>
+            <div class="l">API estimate — all Opus 4.7</div>
+          </div>
+          <div class="bignum ghost reveal d4">
+            <div class="n" style="color:var(--ink);">$200</div>
+            <div class="l">my actual budget — a subscription</div>
+          </div>
+        </div>
+        <p class="lede reveal d5" style="margin-top:46px; max-width:46ch;">~$0.29 per record × 25,000. Not a number you spend on a research-stage fine-tune.</p>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 6 — SECTION: WHAT I TRIED ============ -->
+    <section class="slide divider">
+      <div class="chrome-top"><span>03 · What I tried</span><span>The Minion Framework</span></div>
+      <div class="big-num">03</div>
+      <div class="pad">
+        <div class="tagstrip reveal d1" style="max-width:560px;"><span class="sq"></span><span>The Attempt</span><span class="ln"></span></div>
+        <h1 class="reveal d2">Spawn a lot of agents. But where does the plan live?</h1>
+        <p class="lede reveal d3">The subscription is a flat monthly cap, not a token meter. If I could run it in parallel, the marginal record was free.</p>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 7 — THE FAILURE MODE ============ -->
+    <section class="slide statement">
+      <div class="chrome-top"><span>03 · What I tried</span><span>The Minion Framework</span></div>
+      <div class="pad">
+        <div class="kicker reveal d1">The failure mode that drives everything</div>
+        <h2 class="reveal d2">A single Claude session can't be the orchestrator <span class="by">and</span> the worker.</h2>
+        <p class="lede reveal d3" style="margin-top:38px; max-width:48ch;">Watch one session try to manage ten parallel sub-agents and it loses track of which ones it dispatched at ~100K tokens in. The plan cannot live in a context window.</p>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 8 — SECTION: WHAT WORKED ============ -->
+    <section class="slide divider">
+      <div class="chrome-top"><span>04 · What worked</span><span>The Minion Framework</span></div>
+      <div class="big-num">04</div>
+      <div class="pad">
+        <div class="tagstrip reveal d1" style="max-width:560px;"><span class="sq"></span><span>The Insight</span><span class="ln"></span></div>
+        <h1 class="reveal d2">Make a SQLite table the orchestrator.</h1>
+        <p class="lede reveal d3">No orchestrating Claude. No script. The agents don't talk to each other — they just race for rows.</p>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 9 — THE ATOMIC CLAIM ============ -->
+    <section class="slide content">
+      <div class="chrome-top"><span>04 · What worked</span><span>The Minion Framework</span></div>
+      <div class="pad" style="justify-content:center;">
+        <div class="kicker reveal d1">One clause makes it safe</div>
+        <h2 class="reveal d2" style="font-size:60px;">Atomic claim, no locks, no Redis, no Celery.</h2>
+        <div class="codecard reveal d3">
+          <span class="kw">UPDATE</span> work_queue<br/>
+          <span class="kw">SET</span>&nbsp;&nbsp;&nbsp;&nbsp;status = <span class="kw">'claimed'</span>, claimed_by = :wid<br/>
+          <span class="kw">WHERE</span>&nbsp;&nbsp;thread_id = :tid<br/>
+          <span class="kw">AND</span>&nbsp;&nbsp;&nbsp;&nbsp;status = <span class="kw">'queued'</span>;&nbsp;&nbsp;<span class="cmt">-- only one Army wins</span>
+        </div>
+        <p class="lede reveal d4" style="margin-top:36px; max-width:48ch;">Sixteen Armies run the same UPDATE. Only one matches. Just a table.</p>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 10 — SECTION: THE SOLUTION + architecture ============ -->
+    <section class="slide content">
+      <div class="chrome-top"><span>05 · The solution</span><span>The Minion Framework</span></div>
+      <div class="pad" style="justify-content:flex-start;">
+        <div class="kicker reveal d1" style="margin-bottom:10px;">05 · The architecture</div>
+        <h2 class="reveal d2" style="font-size:54px;">The Minion Framework</h2>
+        <div class="reveal d3" style="margin-top:26px; display:flex; justify-content:center;">
+          <!-- inline architecture diagram, sized to fit -->
+          <svg width="1500" height="600" viewBox="0 0 1500 600" role="img" aria-label="SQLite queue feeds N Minion Armies, each fanning out to 10 minions, merging to a unified corpus, with Gru observing.">
+            <defs>
+              <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 z" fill="#7a3b1f" /></marker>
+              <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 z" fill="#6a6557" /></marker>
+            </defs>
+            <!-- queue -->
+            <rect x="450" y="20" width="600" height="86" rx="6" fill="rgba(122,59,31,0.07)" stroke="#7a3b1f" stroke-width="2"/>
+            <text x="750" y="56" text-anchor="middle" font-family="Hanken Grotesk,sans-serif" font-weight="700" font-size="32" fill="#1c1b18">SQLite work_queue</text>
+            <text x="750" y="88" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="20" fill="#6a6557">WAL · atomic claim via WHERE status='queued'</text>
+            <!-- arrows down -->
+            <path d="M560 108 L300 188" fill="none" stroke="#7a3b1f" stroke-width="2" marker-end="url(#ar)"/>
+            <path d="M750 108 L750 188" fill="none" stroke="#7a3b1f" stroke-width="2" marker-end="url(#ar)"/>
+            <path d="M940 108 L1200 188" fill="none" stroke="#7a3b1f" stroke-width="2" marker-end="url(#ar)"/>
+            <!-- armies -->
+            <g font-family="Hanken Grotesk,sans-serif">
+              <rect x="150" y="190" width="300" height="210" rx="6" fill="#efeadd" stroke="#1c1b18" stroke-width="1.5"/>
+              <text x="300" y="232" text-anchor="middle" font-family="Hanken Grotesk,sans-serif" font-weight="700" font-size="28" fill="#1c1b18">Minion Army 1</text>
+              <text x="300" y="266" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="19" fill="#6a6557">Claude Code session</text>
+              <rect x="195" y="296" width="210" height="46" rx="23" fill="#f6f3ec" stroke="#7a3b1f"/>
+              <text x="300" y="326" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-weight="600" font-size="20" fill="#7a3b1f">× 10 minions</text>
+              <text x="300" y="376" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="18" fill="#6a6557">work/W1/</text>
+
+              <rect x="600" y="190" width="300" height="210" rx="6" fill="#efeadd" stroke="#1c1b18" stroke-width="1.5"/>
+              <text x="750" y="232" text-anchor="middle" font-family="Hanken Grotesk,sans-serif" font-weight="700" font-size="28" fill="#1c1b18">Minion Army 2</text>
+              <text x="750" y="266" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="19" fill="#6a6557">Claude Code session</text>
+              <rect x="645" y="296" width="210" height="46" rx="23" fill="#f6f3ec" stroke="#7a3b1f"/>
+              <text x="750" y="326" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-weight="600" font-size="20" fill="#7a3b1f">× 10 minions</text>
+              <text x="750" y="376" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="18" fill="#6a6557">work/W2/</text>
+
+              <rect x="1050" y="190" width="300" height="210" rx="6" fill="#efeadd" stroke="#1c1b18" stroke-width="1.5"/>
+              <text x="1200" y="232" text-anchor="middle" font-family="Hanken Grotesk,sans-serif" font-weight="700" font-size="28" fill="#1c1b18">Minion Army N</text>
+              <text x="1200" y="266" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="19" fill="#6a6557">Claude Code session</text>
+              <rect x="1095" y="296" width="210" height="46" rx="23" fill="#f6f3ec" stroke="#7a3b1f"/>
+              <text x="1200" y="326" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-weight="600" font-size="20" fill="#7a3b1f">× 10 minions</text>
+              <text x="1200" y="376" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="18" fill="#6a6557">work/WN/</text>
+            </g>
+            <!-- merge -->
+            <path d="M300 402 C300 470 600 480 690 506" fill="none" stroke="#6a6557" stroke-width="1.5" marker-end="url(#ag)"/>
+            <path d="M750 402 L750 506" fill="none" stroke="#6a6557" stroke-width="1.5" marker-end="url(#ag)"/>
+            <path d="M1200 402 C1200 470 900 480 810 506" fill="none" stroke="#6a6557" stroke-width="1.5" marker-end="url(#ag)"/>
+            <rect x="540" y="508" width="420" height="64" rx="6" fill="rgba(122,59,31,0.07)" stroke="#7a3b1f" stroke-width="2"/>
+            <text x="750" y="548" text-anchor="middle" font-family="Hanken Grotesk,sans-serif" font-weight="700" font-size="28" fill="#1c1b18">unified training corpus</text>
+            <!-- Gru observer -->
+            <text x="1430" y="300" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="20" fill="#7a3b1f" transform="rotate(90 1430 300)">GRU · watches all</text>
+            <path d="M1360 295 L1352 295" stroke="#7a3b1f" stroke-dasharray="4 4"/>
+          </svg>
+        </div>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 11 — THREE PRIMITIVES ============ -->
+    <section class="slide content">
+      <div class="chrome-top"><span>05 · The solution</span><span>The Minion Framework</span></div>
+      <div class="pad" style="justify-content:center;">
+        <div class="kicker reveal d1">Three primitives</div>
+        <h2 class="reveal d2" style="font-size:58px; margin-top:6px;">That's the whole framework.</h2>
+        <div class="steps">
+          <div class="step reveal d3"><div class="idx">1</div><div class="body">
+            <div class="t">A shared SQLite work queue</div>
+            <div class="d">Every thread is a row. WAL mode, 30-second busy timeout. <code>queued → claimed → done</code>.</div></div></div>
+          <div class="step reveal d4"><div class="idx">2</div><div class="body">
+            <div class="t">N parallel Minion Armies</div>
+            <div class="d">Each Army is a terminal running <code>claude</code> on a <code>/goal</code> loop: claim ten IDs, work, repeat.</div></div></div>
+          <div class="step reveal d5"><div class="idx">3</div><div class="body">
+            <div class="t">Per-Army minion fan-out</div>
+            <div class="d">Ten ephemeral sub-agents per dispatch — one thread each, write JSON, exit. Peak: ~160 in flight.</div></div></div>
+        </div>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 12 — GRU (image split) ============ -->
+    <section class="slide split">
+      <div class="chrome-top"><span>05 · The solution</span><span>The Minion Framework</span></div>
+      <div class="layout">
+        <div class="col">
+          <div class="kicker reveal d1">The seventeenth session</div>
+          <h2 class="reveal d2">Gru watches the fleet.</h2>
+          <p class="lede reveal d3">Sixteen Armies is too many to track by hand. Gru runs a <strong>/loop</strong> heartbeat every five minutes — queue depth, per-Army throughput, context windows, and the one thing that mattered most: the 5-hour plan budget.</p>
+          <p class="lede reveal d4" style="margin-top:22px;">Gru doesn't orchestrate. Gru observes — and tells me when to slow down before the 429s hit.</p>
+        </div>
+        <div class="plate" style="border-left:1px solid var(--rule);">
+          <img class="reveal-img" src="../images/image4_gru_console.jpeg" alt="Gru at the console watching the Minion fleet, Monet-style" />
+          <span class="pl">Plate II</span>
+        </div>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 13 — WHAT IT COST ============ -->
+    <section class="slide statement">
+      <div class="chrome-top"><span>05 · The solution</span><span>The Minion Framework</span></div>
+      <div class="pad">
+        <div class="kicker reveal d1">What it cost, honestly</div>
+        <h2 class="reveal d2" style="font-size:78px;">Same job. <span class="by">A fraction</span> of the price.</h2>
+        <div class="bignum-row" style="margin-top:40px;">
+          <div class="bignum reveal d3"><div class="n">~36×</div><div class="l">vs. all-Opus API plan</div></div>
+          <div class="bignum reveal d4"><div class="n">~14×</div><div class="l">vs. the smart Opus/Sonnet mix</div></div>
+        </div>
+        <p class="lede reveal d5" style="margin-top:46px; max-width:50ch;">A fixed monthly cap, not a token meter. Once it's paid, the next thousand records cost the same as the previous zero.</p>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 14 — SECTION: VS DYNAMIC WORKFLOWS ============ -->
+    <section class="slide divider">
+      <div class="chrome-top"><span>06 · The twist</span><span>The Minion Framework</span></div>
+      <div class="big-num">06</div>
+      <div class="pad">
+        <div class="tagstrip reveal d1" style="max-width:560px;"><span class="sq"></span><span>Two Weeks Later</span><span class="ln"></span></div>
+        <h1 class="reveal d2">Anthropic shipped Dynamic Workflows.</h1>
+        <p class="lede reveal d3">Same load-bearing idea: move the plan out of the context window. Different substrate — a JS script in a managed runtime instead of a SQLite table across terminals.</p>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 15 — SIDE BY SIDE TABLE ============ -->
+    <section class="slide content cmp">
+      <div class="chrome-top"><span>06 · The comparison</span><span>The Minion Framework</span></div>
+      <div class="pad" style="justify-content:center;">
+        <h2 class="reveal d1" style="font-size:54px;">Side by side</h2>
+        <table>
+          <thead><tr><th></th><th class="dw">Dynamic Workflows</th><th class="mf">Minion Framework</th></tr></thead>
+          <tbody>
+            <tr class="reveal d2"><td class="row">Orchestrator</td><td>JS script Claude wrote</td><td class="mfcell">SQLite work_queue</td></tr>
+            <tr class="reveal d3"><td class="row">Concurrency</td><td>16 concurrent · 1,000 / run</td><td class="mfcell">N Armies × 10 · no cap</td></tr>
+            <tr class="reveal d4"><td class="row">Resume</td><td>Same session only</td><td class="mfcell">Sessions, reboots, machines</td></tr>
+            <tr class="reveal d5"><td class="row">Observability</td><td>Built-in /workflows view</td><td class="mfcell">Gru heartbeat (DIY)</td></tr>
+            <tr class="reveal d6"><td class="row">Hands-on cost</td><td>Launch and ignore</td><td class="mfcell">Babysit the 5-hr budget</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 16 — WHERE EACH WINS ============ -->
+    <section class="slide content versus">
+      <div class="chrome-top"><span>06 · The comparison</span><span>The Minion Framework</span></div>
+      <div class="pad" style="justify-content:center;">
+        <h2 class="reveal d1" style="font-size:54px;">Each wins somewhere.</h2>
+        <div class="cols">
+          <div class="vcard accent reveal d2">
+            <div class="h">Minion still wins</div>
+            <ul>
+              <li>No concurrency cap — the limit is your plan, not the runtime</li>
+              <li>Resume survives anything: reboots, crashes, two laptops over three weeks</li>
+              <li>Cross-machine fan-out is a network mount away</li>
+            </ul>
+          </div>
+          <div class="vcard reveal d3">
+            <div class="h">Workflows just better</div>
+            <ul>
+              <li>Adversarial review of findings, for free</li>
+              <li>Observability you don't have to build or debug</li>
+              <li>The runtime paces your plan — no budget babysitting</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ SLIDE 17 — CLOSING ============ -->
+    <section class="slide closing">
+      <div class="chrome-top"><span>The takeaway</span><span>The Minion Framework</span></div>
+      <div class="pad">
+        <div class="kicker reveal d1">The takeaway</div>
+        <h1 class="reveal d2">What you build the orchestrator out of is a <span class="by">design choice</span>, not a default.</h1>
+        <p class="lede reveal d3">A JS runtime, or a SQLite table and a boss named Gru. Both beat the one thing you should never do: put the plan in a Claude context window and watch it forget what it was doing at 100K tokens in.</p>
+        <div class="sign reveal d4"><span class="ln"></span><span>End of Build Log № 06</span></div>
+      </div>
+      <div class="chrome-bot"><span>Agents · Claude Code · Fine-tuning</span><span>2026-06-05</span></div>
+    </section>
+
+    <!-- ============ CONNECT (after closing) ============ -->
+    <section class="slide connect">
+      <div class="chrome-top"><span>Let's connect</span><span>The Minion Framework</span></div>
+      <div class="pad">
+        <div class="kicker reveal d1">Find me on X / Twitter</div>
+        <div class="big reveal d2">@nedwize</div>
+        <div class="tagline reveal d3">AI consultant · −1 → 0 builder · early Claude user</div>
+        <p class="blurb reveal d4">I write about agents, fine-tuning, and squeezing production results out of consumer budgets. DMs open — come build.</p>
+      </div>
+      <div class="chrome-bot"><span>Nakshatra Saxena</span><span>@nedwize</span></div>
+    </section>
+
+  </main>
+</div>
+
+<!-- progress + page chrome (outside the stage) -->
+<div class="progress" id="progress"></div>
+<div class="pagenum" id="pagenum">01</div>
+
+<!-- inline edit affordance -->
+<div class="edit-hotzone" id="editHotzone"></div>
+<button class="edit-toggle" id="editToggle" title="Edit mode (E)">✏️ edit</button>
+
+<script>
+  /* ===========================================
+     SLIDE CONTROLLER — fixed-stage scaling + nav
+     =========================================== */
+  class Deck {
+    constructor() {
+      this.slides = [...document.querySelectorAll('.slide')];
+      this.i = 0;
+      this.stage = document.getElementById('deckStage');
+      this.progress = document.getElementById('progress');
+      this.pagenum = document.getElementById('pagenum');
+      this.fit(); addEventListener('resize', () => this.fit());
+      this.keys(); this.touch(); this.wheel();
+      this.show(0);
+    }
+    fit() {
+      const f = Math.min(innerWidth / 1920, innerHeight / 1080);
+      const x = (innerWidth - 1920 * f) / 2, y = (innerHeight - 1080 * f) / 2;
+      this.stage.style.transform = `translate(${x}px, ${y}px) scale(${f})`;
+    }
+    show(n) {
+      this.i = Math.max(0, Math.min(n, this.slides.length - 1));
+      this.slides.forEach((s, k) => { s.classList.toggle('active', k === this.i); s.classList.toggle('visible', k === this.i); });
+      this.progress.style.width = ((this.i + 1) / this.slides.length * 100) + '%';
+      this.pagenum.textContent = String(this.i + 1).padStart(2, '0') + ' / ' + String(this.slides.length).padStart(2, '0');
+    }
+    next() { this.show(this.i + 1); }
+    prev() { this.show(this.i - 1); }
+    keys() {
+      addEventListener('keydown', (e) => {
+        if (e.target.getAttribute && e.target.getAttribute('contenteditable') === 'true') return;
+        if (['ArrowRight', 'ArrowDown', ' ', 'PageDown'].includes(e.key)) { e.preventDefault(); this.next(); }
+        if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); this.prev(); }
+        if (e.key === 'Home') this.show(0);
+        if (e.key === 'End') this.show(this.slides.length - 1);
+      });
+    }
+    touch() {
+      let x0 = null;
+      addEventListener('touchstart', (e) => x0 = e.touches[0].clientX, { passive: true });
+      addEventListener('touchend', (e) => {
+        if (x0 === null) return;
+        const dx = e.changedTouches[0].clientX - x0;
+        if (Math.abs(dx) > 50) (dx < 0 ? this.next() : this.prev());
+        x0 = null;
+      }, { passive: true });
+    }
+    wheel() {
+      let lock = false;
+      addEventListener('wheel', (e) => {
+        if (lock) return;
+        if (Math.abs(e.deltaY) < 30 && Math.abs(e.deltaX) < 30) return;
+        lock = true; setTimeout(() => lock = false, 700);
+        ((e.deltaY > 0 || e.deltaX > 0) ? this.next() : this.prev());
+      }, { passive: true });
+    }
+  }
+  const deck = new Deck();
+
+  /* ===========================================
+     INLINE EDITING — hover hotzone / E key
+     =========================================== */
+  const editor = {
+    isActive: false,
+    toggle() {
+      this.isActive = !this.isActive;
+      const t = document.getElementById('editToggle');
+      t.classList.toggle('active', this.isActive);
+      t.textContent = this.isActive ? '✓ done' : '✏️ edit';
+      document.querySelectorAll('.slide h1, .slide h2, .slide p, .slide .t, .slide .d, .slide li, .slide .v, .slide td, .slide .cap, .slide .kicker')
+        .forEach(el => el.setAttribute('contenteditable', this.isActive));
+    }
+  };
+  const toggle = document.getElementById('editToggle');
+  const hotzone = document.getElementById('editHotzone');
+  let hideT = null;
+  toggle.addEventListener('click', () => editor.toggle());
+  hotzone.addEventListener('click', () => editor.toggle());
+  hotzone.addEventListener('mouseenter', () => { clearTimeout(hideT); toggle.classList.add('show'); });
+  hotzone.addEventListener('mouseleave', () => { hideT = setTimeout(() => { if (!editor.isActive) toggle.classList.remove('show'); }, 400); });
+  toggle.addEventListener('mouseenter', () => clearTimeout(hideT));
+  toggle.addEventListener('mouseleave', () => { hideT = setTimeout(() => { if (!editor.isActive) toggle.classList.remove('show'); }, 400); });
+  addEventListener('keydown', (e) => {
+    if ((e.key === 'e' || e.key === 'E') && e.target.getAttribute('contenteditable') !== 'true') editor.toggle();
+  });
+</script>
+</body>
+</html>
